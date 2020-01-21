@@ -4,11 +4,13 @@
  *
  * Copyright (C) 2014-2016 Freescale Semiconductor, Inc.
  * Author: German Rivera <German.Rivera@freescale.com>
+ * Copyright 2018-2019 NXP
  *
  */
 
 #define pr_fmt(fmt) "fsl-mc: " fmt
 
+#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/of_address.h>
@@ -21,12 +23,28 @@
 
 #include "fsl-mc-private.h"
 
+static struct fsl_mc_version mc_version;
+
+/**
+ * fsl_mc_get_version - function to retrieve the MC f/w version information
+ *
+ * Return:     mc version when called after fsl-mc-bus probe; NULL otherwise.
+ */
+struct fsl_mc_version *fsl_mc_get_version(void)
+{
+       if (mc_version.major)
+               return &mc_version;
+
+       return NULL;
+}
+EXPORT_SYMBOL_GPL(fsl_mc_get_version);
+
+
 /**
  * Default DMA mask for devices on a fsl-mc bus
  */
 #define FSL_MC_DEFAULT_DMA_MASK	(~0ULL)
 
-static struct fsl_mc_version mc_version;
 
 /**
  * struct fsl_mc - Private data of a "fsl,qoriq-mc" platform device
@@ -54,6 +72,20 @@ struct fsl_mc_addr_translation_range {
 	u64 start_mc_offset;
 	u64 end_mc_offset;
 	phys_addr_t start_phys_addr;
+};
+
+/**
+ * struct mc_version
+ * @major: Major version number: incremented on API compatibility changes
+ * @minor: Minor version number: incremented on API additions (that are
+ *		backward compatible); reset when major version is incremented
+ * @revision: Internal revision number: incremented on implementation changes
+ *		and/or bug fixes that have no impact on API
+ */
+struct mc_version {
+	u32 major;
+	u32 minor;
+	u32 revision;
 };
 
 /**
@@ -117,12 +149,25 @@ static int fsl_mc_bus_uevent(struct device *dev, struct kobj_uevent_env *env)
 
 static int fsl_mc_dma_configure(struct device *dev)
 {
+	enum dev_dma_attr attr;
 	struct device *dma_dev = dev;
+	int err = -ENODEV;
 
 	while (dev_is_fsl_mc(dma_dev))
 		dma_dev = dma_dev->parent;
 
-	return of_dma_configure(dev, dma_dev->of_node, 0);
+	if (dma_dev->of_node)
+		err = of_dma_configure(dev, dma_dev->of_node, 1);
+	else {
+		if (has_acpi_companion(dma_dev)) {
+			attr = acpi_get_dma_attr(to_acpi_device_node
+							(dma_dev->fwnode));
+			if (attr != DEV_DMA_NOT_SUPPORTED)
+				err = acpi_dma_configure(dev, attr);
+		}
+	}
+
+	return err;
 }
 
 static ssize_t modalias_show(struct device *dev, struct device_attribute *attr,
@@ -326,7 +371,7 @@ EXPORT_SYMBOL_GPL(fsl_mc_driver_unregister);
  */
 static int mc_get_version(struct fsl_mc_io *mc_io,
 			  u32 cmd_flags,
-			  struct fsl_mc_version *mc_ver_info)
+			  struct mc_version *mc_ver_info)
 {
 	struct fsl_mc_command cmd = { 0 };
 	struct dpmng_rsp_get_version *rsp_params;
@@ -350,20 +395,6 @@ static int mc_get_version(struct fsl_mc_io *mc_io,
 
 	return 0;
 }
-
-/**
- * fsl_mc_get_version - function to retrieve the MC f/w version information
- *
- * Return:	mc version when called after fsl-mc-bus probe; NULL otherwise.
- */
-struct fsl_mc_version *fsl_mc_get_version(void)
-{
-	if (mc_version.major)
-		return &mc_version;
-
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(fsl_mc_get_version);
 
 /**
  * fsl_mc_get_root_dprc - function to traverse to the root dprc
@@ -864,7 +895,8 @@ static int fsl_mc_bus_probe(struct platform_device *pdev)
 	int container_id;
 	phys_addr_t mc_portal_phys_addr;
 	u32 mc_portal_size;
-	struct resource res;
+	struct mc_version mc_version;
+	struct resource *plat_res;
 
 	mc = devm_kzalloc(&pdev->dev, sizeof(*mc), GFP_KERNEL);
 	if (!mc)
@@ -875,16 +907,9 @@ static int fsl_mc_bus_probe(struct platform_device *pdev)
 	/*
 	 * Get physical address of MC portal for the root DPRC:
 	 */
-	error = of_address_to_resource(pdev->dev.of_node, 0, &res);
-	if (error < 0) {
-		dev_err(&pdev->dev,
-			"of_address_to_resource() failed for %pOF\n",
-			pdev->dev.of_node);
-		return error;
-	}
-
-	mc_portal_phys_addr = res.start;
-	mc_portal_size = resource_size(&res);
+	plat_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	mc_portal_phys_addr = plat_res->start;
+	mc_portal_size = resource_size(plat_res);
 	error = fsl_create_mc_io(&pdev->dev, mc_portal_phys_addr,
 				 mc_portal_size, NULL,
 				 FSL_MC_IO_ATOMIC_CONTEXT_PORTAL, &mc_io);
@@ -901,11 +926,13 @@ static int fsl_mc_bus_probe(struct platform_device *pdev)
 	dev_info(&pdev->dev, "MC firmware version: %u.%u.%u\n",
 		 mc_version.major, mc_version.minor, mc_version.revision);
 
+	if (dev_of_node(&pdev->dev)) {
 	error = get_mc_addr_translation_ranges(&pdev->dev,
 					       &mc->translation_ranges,
 					       &mc->num_translation_ranges);
 	if (error < 0)
 		goto error_cleanup_mc_io;
+	}
 
 	error = dprc_get_container_id(mc_io, 0, &container_id);
 	if (error < 0) {
@@ -932,6 +959,7 @@ static int fsl_mc_bus_probe(struct platform_device *pdev)
 		goto error_cleanup_mc_io;
 
 	mc->root_mc_bus_dev = mc_bus_dev;
+	mc_bus_dev->dev.fwnode = pdev->dev.fwnode;
 	return 0;
 
 error_cleanup_mc_io:
@@ -965,11 +993,18 @@ static const struct of_device_id fsl_mc_bus_match_table[] = {
 
 MODULE_DEVICE_TABLE(of, fsl_mc_bus_match_table);
 
+static const struct acpi_device_id fsl_mc_bus_acpi_match_table[] = {
+	{"NXP0008", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, fsl_mc_bus_acpi_match_table);
+
 static struct platform_driver fsl_mc_bus_driver = {
 	.driver = {
 		   .name = "fsl_mc_bus",
 		   .pm = NULL,
 		   .of_match_table = fsl_mc_bus_match_table,
+		   .acpi_match_table = fsl_mc_bus_acpi_match_table,
 		   },
 	.probe = fsl_mc_bus_probe,
 	.remove = fsl_mc_bus_remove,

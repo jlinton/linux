@@ -741,8 +741,13 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
 	if (IS_ERR(phydev))
 		phydev = get_phy_device(bus, addr, false);
 
-	if (IS_ERR(phydev))
-		return phydev;
+	if (IS_ERR(phydev)) {
+	       printk("no phy @%d\n", addr);
+	       return phydev;
+	}
+
+	printk("found phy @%d\n", addr);
+
 
 	/*
 	 * For DT, see if the auto-probed phy has a correspoding child

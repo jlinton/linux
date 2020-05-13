@@ -236,7 +236,7 @@ static int xgmac_mdio_read(struct mii_bus *bus, int phy_id, int regnum)
 	}
 
 	value = xgmac_read32(&regs->mdio_data, endian) & 0xffff;
-	dev_dbg(&bus->dev, "read %04x\n", value);
+	dev_err(&bus->dev, "read PHY%d reg %d.%hhu=%04x\n", phy_id, dev_addr, regnum, value);
 
 	return value;
 }

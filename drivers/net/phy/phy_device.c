@@ -723,7 +723,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		if (phy_reg < 0)
 			return -EIO;
 
-		if ((*devs & 0x1fffffff) == 0x1fffffff) {
+		if ((*devs & 0x1ffffffe) == 0x1ffffffe) {
 			/*  If mostly Fs, there is no device there,
 			 *  then let's continue to probe more, as some
 			 *  10G PHYs have zero Devices In package,
@@ -733,7 +733,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 			if (phy_reg < 0)
 				return -EIO;
 			/* no device there, let's get out of here */
-			if ((*devs & 0x1fffffff) == 0x1fffffff) {
+			if ((*devs & 0x1ffffffe) == 0x1ffffffe) {
 				*phy_id = 0xffffffff;
 				return 0;
 			} else {

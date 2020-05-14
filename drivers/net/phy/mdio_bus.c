@@ -732,10 +732,15 @@ EXPORT_SYMBOL(mdiobus_free);
  */
 struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
 {
-	struct phy_device *phydev;
+	struct phy_device *phydev = ERR_PTR(-ENODEV);
 	int err;
 
-	phydev = get_phy_device(bus, addr, false);
+	if (bus->probe_capabilities == MDIOBUS_C45_FIRST)
+		phydev = get_phy_device(bus, addr, true);
+
+	if (IS_ERR(phydev))
+		phydev = get_phy_device(bus, addr, false);
+
 	if (IS_ERR(phydev))
 		return phydev;
 

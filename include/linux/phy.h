@@ -275,6 +275,11 @@ struct mii_bus {
 	int reset_delay_us;
 	/* RESET GPIO descriptor pointer */
 	struct gpio_desc *reset_gpiod;
+	/* bus capabilities, used for probing */
+	enum {
+		MDIOBUS_C22_ONLY = 0,
+		MDIOBUS_C45_FIRST,
+	} probe_capabilities;
 };
 #define to_mii_bus(d) container_of(d, struct mii_bus, dev)
 

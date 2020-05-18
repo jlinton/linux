@@ -742,6 +742,12 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		}
 	}
 
+	/* no reported devices */
+	if (*devs == 0) {
+		*phy_id = 0xffffffff;
+		return 0;
+	}
+
 	/* Now probe Device Identifiers for each device present. */
 	for (i = 1; i < num_ids; i++) {
 		if (!(c45_ids->devices_in_package & (1 << i)))

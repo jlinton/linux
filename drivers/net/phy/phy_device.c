@@ -637,7 +637,7 @@ struct phy_device *phy_device_create(struct mii_bus *bus, int addr, u32 phy_id,
 		const int num_ids = ARRAY_SIZE(c45_ids->device_ids);
 		int i;
 
-		for (i = 1; i < num_ids; i++) {
+		for (i = 0; i < num_ids; i++) {
 			if (c45_ids->device_ids[i] == 0xffffffff)
 				continue;
 
@@ -689,11 +689,33 @@ static int get_phy_c45_devs_in_pkg(struct mii_bus *bus, int addr, int dev_addr,
 		return -EIO;
 	*devices_in_package |= phy_reg;
 
-	/* Bit 0 doesn't represent a device, it indicates c22 regs presence */
-	*devices_in_package &= ~BIT(0);
-
 	return 0;
 }
+
+static int _get_phy_id(struct mii_bus *bus, int addr, int dev_addr, bool c45)
+{
+	int phy_reg, reg_addr;
+	int ret;
+
+	int reg_base = c45?(MII_ADDR_C45 | dev_addr << 16):0;
+
+	reg_addr =  reg_base | MII_PHYSID1;
+	phy_reg = mdiobus_read(bus, addr, reg_addr);
+	if (phy_reg < 0)
+		return -EIO;
+
+	ret = phy_reg << 16;
+
+	reg_addr = reg_base | MII_PHYSID2;
+	phy_reg = mdiobus_read(bus, addr, reg_addr);
+	if (phy_reg < 0)
+		return -EIO;
+	ret |= phy_reg;
+
+	return ret;
+}
+
+#define valid_phy_id(val) ((val>0) && ((val & 0x1fffffff) != 0x1fffffff))
 
 /**
  * get_phy_c45_ids - reads the specified addr for its 802.3-c45 IDs.
@@ -714,6 +736,8 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	int i, reg_addr;
 	const int num_ids = ARRAY_SIZE(c45_ids->device_ids);
 	u32 *devs = &c45_ids->devices_in_package;
+	bool c22_present = false;
+	bool valid_id = false;
 
 	/* Find first non-zero Devices In package. Device zero is reserved
 	 * for 802.3 c45 complied PHYs, so don't probe it at first.
@@ -723,7 +747,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		if (phy_reg < 0)
 			return -EIO;
 
-		if ((*devs & 0x1ffffffe) == 0x1ffffffe) {
+		if ((*devs & 0x1fffffff) == 0x1fffffff) {
 			/*  If mostly Fs, there is no device there,
 			 *  then let's continue to probe more, as some
 			 *  10G PHYs have zero Devices In package,
@@ -733,7 +757,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 			if (phy_reg < 0)
 				return -EIO;
 			/* no device there, let's get out of here */
-			if ((*devs & 0x1ffffffe) == 0x1ffffffe) {
+			if ((*devs & 0x1fffffff) == 0x1fffffff) {
 				*phy_id = 0xffffffff;
 				return 0;
 			} else {
@@ -748,23 +772,71 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		return 0;
 	}
 
+	/* Bit 0 doesn't represent a device, it indicates c22 regs presence */
+	c22_present = *devs & BIT(0);
+	*devs &= ~BIT(0);
+
 	/* Now probe Device Identifiers for each device present. */
 	for (i = 1; i < num_ids; i++) {
 		if (!(c45_ids->devices_in_package & (1 << i)))
 			continue;
 
-		reg_addr = MII_ADDR_C45 | i << 16 | MII_PHYSID1;
-		phy_reg = mdiobus_read(bus, addr, reg_addr);
-		if (phy_reg < 0)
+		c45_ids->device_ids[i] = _get_phy_id(bus, addr, i, true);
+		if (c45_ids->device_ids[i] < 0)
 			return -EIO;
-		c45_ids->device_ids[i] = phy_reg << 16;
-
-		reg_addr = MII_ADDR_C45 | i << 16 | MII_PHYSID2;
-		phy_reg = mdiobus_read(bus, addr, reg_addr);
-		if (phy_reg < 0)
-			return -EIO;
-		c45_ids->device_ids[i] |= phy_reg;
+		if (valid_phy_id(c45_ids->device_ids[i]))
+			valid_id = true;
 	}
+
+	/* none of the device ids looked valid */
+	if (!valid_id) {
+		if (c22_present) {
+			*phy_id = _get_phy_id(bus, addr, 0, false);
+			if (valid_phy_id(*phy_id)) {
+				// force fallback
+				*phy_id = 0xffffffff;
+				return 0;
+			}
+		}
+
+		// check c45.2 device id
+		*phy_id = _get_phy_id(bus, addr, 30, true);
+		if (valid_phy_id(*phy_id)) {
+			c45_ids->device_ids[0] = *phy_id;
+			return 0;
+		}
+
+		// alternate device location
+		*phy_id = _get_phy_id(bus, addr, 31, true);
+		if (valid_phy_id(*phy_id)) {
+			c45_ids->device_ids[0] = *phy_id;
+			return 0;
+		}
+
+		// package identifier 45.2.12.2.1
+		reg_addr = MII_ADDR_C45 | 31 << 16 | 14;
+		phy_reg = mdiobus_read(bus, addr, reg_addr);
+		if (phy_reg < 0)
+			return -EIO;
+		c45_ids->device_ids[0] = phy_reg << 16;
+
+		reg_addr = MII_ADDR_C45 | 31 << 16 | 15;
+		phy_reg = mdiobus_read(bus, addr, reg_addr);
+		if (phy_reg < 0)
+			return -EIO;
+
+		c45_ids->device_ids[0] |= phy_reg;
+		if (valid_phy_id(*phy_id)) {
+			return 0;
+		}
+
+		// invalidate bogus values we stored
+		c45_ids->device_ids[0] = 0xffffffff;
+
+		// at this point we found something reporting c45 capabilities,
+		// but all the vendor ids appear bogus...
+	}
+
 	*phy_id = 0;
 	return 0;
 }

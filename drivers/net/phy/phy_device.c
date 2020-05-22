@@ -689,9 +689,6 @@ static int get_phy_c45_devs_in_pkg(struct mii_bus *bus, int addr, int dev_addr,
 		return -EIO;
 	*devices_in_package |= phy_reg;
 
-	/* Bit 0 doesn't represent a device, it indicates c22 regs presence */
-	*devices_in_package &= ~BIT(0);
-
 	return 0;
 }
 
@@ -742,6 +739,8 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	int i;
 	const int num_ids = ARRAY_SIZE(c45_ids->device_ids);
 	u32 *devs = &c45_ids->devices_in_package;
+	bool c22_present = false;
+	bool valid_id = false;
 
 	/* Find first non-zero Devices In package. Device zero is reserved
 	 * for 802.3 c45 complied PHYs, so don't probe it at first.
@@ -770,6 +769,10 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		return 0;
 	}
 
+	/* Bit 0 doesn't represent a device, it indicates c22 regs presence */
+	c22_present = *devs & BIT(0);
+	*devs &= ~BIT(0);
+
 	/* Now probe Device Identifiers for each device present. */
 	for (i = 1; i < num_ids; i++) {
 		if (!(c45_ids->devices_in_package & (1 << i)))
@@ -778,6 +781,13 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 		ret = _get_phy_id(bus, addr, i, &c45_ids->device_ids[i], true);
 		if (ret < 0)
 			return ret;
+		if (valid_phy_id(c45_ids->device_ids[i]))
+			valid_id = true;
+	}
+
+	if (!valid_id && c22_present) {
+		*phy_id = 0xffffffff;
+	        return 0;
 	}
 	*phy_id = 0;
 	return 0;

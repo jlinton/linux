@@ -742,6 +742,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	bool c22_present = false;
 	bool valid_id = false;
 
+	*phy_id = 0xffffffff;
 	/* Find first non-zero Devices In package. Device zero is reserved
 	 * for 802.3 c45 complied PHYs, We will ask it for a devices list,
 	 * but later we won't ask for identification from it.
@@ -762,10 +763,8 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	}
 
 	/* no reported devices */
-	if (!valid_phy_id(*devs)) {
-		*phy_id = 0xffffffff;
+	if (!valid_phy_id(*devs))
 		return 0;
-	}
 
 	/* Bit 0 doesn't represent a device, it indicates c22 regs presence */
 	c22_present = *devs & BIT(0);
@@ -783,10 +782,9 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 			valid_id = true;
 	}
 
-	if (!valid_id && c22_present) {
-		*phy_id = 0xffffffff;
+	if (!valid_id && c22_present)
 	        return 0;
-	}
+
 	*phy_id = 0;
 	return 0;
 }

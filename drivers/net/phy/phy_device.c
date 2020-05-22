@@ -743,7 +743,8 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	bool valid_id = false;
 
 	/* Find first non-zero Devices In package. Device zero is reserved
-	 * for 802.3 c45 complied PHYs, so don't probe it at first.
+	 * for 802.3 c45 complied PHYs, We will ask it for a devices list,
+	 * but later we won't ask for identification from it.
 	 */
 	for (i = 0; i < num_ids && *devs == 0; i++) {
 		ret = get_phy_c45_devs_in_pkg(bus, addr, i, devs);
@@ -756,10 +757,7 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 			 *  10G PHYs have zero Devices In package,
 			 *  e.g. Cortina CS4315/CS4340 PHY.
 			 */
-			phy_reg = get_phy_c45_devs_in_pkg(bus, addr, 0, devs);
-			if (phy_reg < 0)
-				return -EIO;
-			break;
+			*devs = 0;
 		}
 	}
 

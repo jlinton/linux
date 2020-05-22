@@ -695,6 +695,11 @@ static int get_phy_c45_devs_in_pkg(struct mii_bus *bus, int addr, int dev_addr,
 	return 0;
 }
 
+static bool valid_phy_id(int val)
+{
+	return (val > 0 && ((val & 0x1fffffff) != 0x1fffffff));
+}
+
 /**
  * get_phy_c45_ids - reads the specified addr for its 802.3-c45 IDs.
  * @bus: the target MII bus
@@ -732,18 +737,12 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 			phy_reg = get_phy_c45_devs_in_pkg(bus, addr, 0, devs);
 			if (phy_reg < 0)
 				return -EIO;
-			/* no device there, let's get out of here */
-			if ((*devs & 0x1fffffff) == 0x1fffffff) {
-				*phy_id = 0xffffffff;
-				return 0;
-			} else {
-				break;
-			}
+			break;
 		}
 	}
 
 	/* no reported devices */
-	if (*devs == 0) {
+	if (!valid_phy_id(*devs)) {
 		*phy_id = 0xffffffff;
 		return 0;
 	}

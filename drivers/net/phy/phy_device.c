@@ -789,7 +789,9 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 	if (!valid_id && c22_present)
 	        return 0;
 
-	*phy_id = 0;
+	if (valid_id || bus->probe_capabilities != MDIOBUS_C45_FIRST)
+		*phy_id = 0;
+
 	return 0;
 }
 
@@ -851,6 +853,10 @@ struct phy_device *get_phy_device(struct mii_bus *bus, int addr, bool is_c45)
 
 	/* If the phy_id is mostly Fs, there is no device there */
 	if ((phy_id & 0x1fffffff) == 0x1fffffff)
+		return ERR_PTR(-ENODEV);
+
+	/* Strict scanning should also ignore phy_id = 0 */
+	if (phy_id == 0 && bus->probe_capabilities == MDIOBUS_C45_FIRST)
 		return ERR_PTR(-ENODEV);
 
 	return phy_device_create(bus, addr, phy_id, is_c45, &c45_ids);

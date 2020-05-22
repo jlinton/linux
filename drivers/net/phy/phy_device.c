@@ -780,6 +780,10 @@ static int get_phy_c45_ids(struct mii_bus *bus, int addr, u32 *phy_id,
 			return ret;
 		if (valid_phy_id(c45_ids->device_ids[i]))
 			valid_id = true;
+		else
+			c45_ids->device_ids[i] = 0xffffffff;
+
+		/* consider probing PKGID per 45.2.12.2.1? */
 	}
 
 	if (!valid_id && c22_present)

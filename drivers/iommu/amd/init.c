@@ -2967,6 +2967,7 @@ static void amd_iommu_resume(void)
 {
 	struct amd_iommu *iommu;
 
+	pr_err("amd_iommu_resume.\n");
 	for_each_iommu(iommu)
 		iommu_apply_resume_quirks(iommu);
 
@@ -2978,6 +2979,7 @@ static void amd_iommu_resume(void)
 
 static int amd_iommu_suspend(void)
 {
+        pr_err("amd_iommu_suspend.\n");
 	/* disable IOMMUs to go out of the way for BIOS */
 	disable_iommus();
 

@@ -61,7 +61,7 @@ static void amdgpu_tlb_fence_work(struct work_struct *work)
 
 	r = amdgpu_gmc_flush_gpu_tlb_pasid(f->adev, f->pasid, 2, true, 0);
 	if (r) {
-		dev_err(f->adev->dev, "TLB flush failed for PASID %d.\n",
+		dev_err_once(f->adev->dev, "TLB flush failed for PASID %d.\n",
 			f->pasid);
 		dma_fence_set_error(&f->base, r);
 	}

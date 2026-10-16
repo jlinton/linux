@@ -352,6 +352,13 @@ struct amdgpu_gmc {
 	bool flush_tlb_needs_extra_type_0;
 	bool flush_tlb_needs_extra_type_2;
 	bool flush_pasid_uses_kiq;
+	/*
+	 * Set when the KIQ fence path is wedged (seen on gfx9 APUs after a
+	 * suspend/resume when GFXOFF engaged before the GPU settled).  While
+	 * set, TLB invalidations are routed through the direct MMIO path
+	 * instead of KIQ.
+	 */
+	bool kiq_tlb_wedged;
 };
 
 #define amdgpu_gmc_emit_flush_gpu_tlb(r, vmid, addr) (r)->adev->gmc.gmc_funcs->emit_flush_gpu_tlb((r), (vmid), (addr))

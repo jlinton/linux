@@ -860,15 +860,24 @@ static void gmc_v9_0_flush_gpu_tlb(struct amdgpu_device *adev, uint32_t vmid,
 
 	/* This is necessary for SRIOV as well as for GFXOFF to function
 	 * properly under bare metal
+	 *
+	 * Skip the KIQ path once it has wedged (seen after suspend/resume) and
+	 * use the direct MMIO path below instead.
 	 */
 	if (adev->gfx.kiq[inst].ring.sched.ready &&
-	    (amdgpu_sriov_runtime(adev) || !amdgpu_sriov_vf(adev))) {
+	    (amdgpu_sriov_runtime(adev) || !amdgpu_sriov_vf(adev)) &&
+	    !adev->gmc.kiq_tlb_wedged) {
 		uint32_t req = hub->vm_inv_eng0_req + hub->eng_distance * eng;
 		uint32_t ack = hub->vm_inv_eng0_ack + hub->eng_distance * eng;
 
 		amdgpu_gmc_fw_reg_write_reg_wait(adev, req, ack, inv_req,
 						 1 << vmid, inst);
-		return;
+		/*
+		 * If that call just wedged the KIQ, fall through and redo the
+		 * flush via MMIO below so this invalidation is not dropped.
+		 */
+		if (!adev->gmc.kiq_tlb_wedged)
+			return;
 	}
 
 	/* This path is needed before KIQ/MES/GFXOFF are set up */

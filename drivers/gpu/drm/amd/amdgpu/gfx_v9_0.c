@@ -3934,6 +3934,57 @@ static int gfx_v9_0_kcq_resume(struct amdgpu_device *adev)
 	return amdgpu_gfx_enable_kcq(adev, 0);
 }
 
+/*
+ * gfx_v9_0_verify_kiq_after_resume - confirm the KIQ fence path survived resume
+ *
+ * On gfx9 APUs (Renoir/Cezanne/Barcelo) GFXOFF engaging before the GPU has
+ * fully settled after a suspend/resume can wedge the KIQ: the ring test still
+ * passes and ring.sched.ready stays true, yet every KIQ fence wait then times
+ * out.  That breaks all KIQ-based TLB invalidations for the rest of the power
+ * cycle and silently drops them (causing both the "failed to write reg" spam
+ * and GPUVM corruption/flicker).
+ *
+ * Probe the KIQ fence path - the exact mechanism TLB flushes use - with a
+ * scratch register write that is read back directly over MMIO.  On success
+ * release the GFXOFF-disable reference taken by the caller and keep using the
+ * fast KIQ path.  If it is wedged, latch the TLB flush path onto direct MMIO
+ * and keep GFXOFF disabled so the MMIO path can safely touch GC registers.
+ *
+ * Must be called with a GFXOFF-disable reference held
+ * (amdgpu_gfx_off_ctrl(adev, false)); the reference is dropped again only on
+ * the success path.
+ */
+static void gfx_v9_0_verify_kiq_after_resume(struct amdgpu_device *adev)
+{
+	uint32_t scratch = SOC15_REG_OFFSET(GC, 0, mmSCRATCH_REG0);
+	uint32_t tmp;
+
+	if (!adev->gfx.kiq[0].ring.sched.ready) {
+		/* No usable KIQ - nothing to verify, drop the hold. */
+		amdgpu_gfx_off_ctrl(adev, true);
+		return;
+	}
+
+	/* Seed a value the KIQ write must overwrite, then write via KIQ. */
+	WREG32_NO_KIQ(scratch, 0xcafedead);
+	amdgpu_kiq_wreg(adev, scratch, 0xdeadbeef, 0);
+	tmp = RREG32_NO_KIQ(scratch);
+
+	if (tmp == 0xdeadbeef) {
+		if (adev->gmc.kiq_tlb_wedged)
+			dev_info(adev->dev,
+				 "KIQ healthy after resume, re-enabling KIQ TLB flush path\n");
+		adev->gmc.kiq_tlb_wedged = false;
+		amdgpu_gfx_off_ctrl(adev, true);
+	} else {
+		dev_err_once(adev->dev,
+			     "KIQ wedged after resume (scratch readback 0x%08x); using MMIO TLB flush with GFXOFF held off\n",
+			     tmp);
+		adev->gmc.kiq_tlb_wedged = true;
+		/* keep the GFXOFF-disable reference held for the MMIO path */
+	}
+}
+
 static int gfx_v9_0_cp_resume(struct amdgpu_device *adev)
 {
 	int r, i;
@@ -3984,6 +4035,15 @@ static int gfx_v9_0_cp_resume(struct amdgpu_device *adev)
 		ring = &adev->gfx.compute_ring[i];
 		amdgpu_ring_test_helper(ring);
 	}
+
+	/*
+	 * Keep GFXOFF disabled across the fragile resume window while we
+	 * confirm the KIQ fence path actually works.  The reference is
+	 * released inside the helper on success; if the KIQ is wedged it is
+	 * held so the MMIO TLB-flush fallback can safely touch GC registers.
+	 */
+	amdgpu_gfx_off_ctrl(adev, false);
+	gfx_v9_0_verify_kiq_after_resume(adev);
 
 	gfx_v9_0_enable_gui_idle_interrupt(adev, true);
 

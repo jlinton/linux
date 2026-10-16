@@ -739,7 +739,12 @@ int amdgpu_gmc_flush_gpu_tlb_pasid(struct amdgpu_device *adev, uint16_t pasid,
 	if (!down_read_trylock(&adev->reset_domain->sem))
 		return 0;
 
-	if (!adev->gmc.flush_pasid_uses_kiq || !ring->sched.ready) {
+	/*
+	 * If the KIQ is wedged (e.g. after a suspend/resume on gfx9) fall back
+	 * to the direct MMIO path so invalidations are not silently dropped.
+	 */
+	if (!adev->gmc.flush_pasid_uses_kiq || !ring->sched.ready ||
+	    adev->gmc.kiq_tlb_wedged) {
 
 		if (!adev->gmc.gmc_funcs->flush_gpu_tlb_pasid) {
 			r = 0;
@@ -865,7 +870,20 @@ failed_undo:
 	amdgpu_ring_undo(ring);
 	spin_unlock_irqrestore(&kiq->ring_lock, flags);
 failed_kiq:
-	dev_err(adev->dev, "failed to write reg %x wait reg %x\n", reg0, reg1);
+	/*
+	 * The KIQ fence path is wedged - typically after a suspend/resume on
+	 * gfx9 APUs when GFXOFF engaged before the GPU had settled.  Latch the
+	 * TLB flush path onto direct MMIO so subsequent invalidations are not
+	 * silently dropped (which otherwise shows up as GPUVM corruption); the
+	 * failing caller re-issues this flush via MMIO.  Guarded so we complain
+	 * only once per latch instead of once per dropped flush.
+	 */
+	if (!adev->gmc.kiq_tlb_wedged) {
+		adev->gmc.kiq_tlb_wedged = true;
+		dev_err(adev->dev,
+			"KIQ wedged (failed to write reg %x wait reg %x); falling back to MMIO TLB flush\n",
+			reg0, reg1);
+	}
 }
 
 /**

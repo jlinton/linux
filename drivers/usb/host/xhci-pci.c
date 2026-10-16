@@ -339,8 +339,17 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 		xhci->quirks |= XHCI_U2_DISABLE_WAKE;
 
 	if (pdev->vendor == PCI_VENDOR_ID_AMD &&
-		pdev->device == PCI_DEVICE_ID_AMD_RENOIR_XHCI)
+		pdev->device == PCI_DEVICE_ID_AMD_RENOIR_XHCI) {
 		xhci->quirks |= XHCI_BROKEN_D3COLD_S2I;
+		/* On S3 resume the controller restore (CRS) path reinstates
+		 * stale device context for an attached USB-C dock hub, whose
+		 * status-change interrupt transfer then fails with -EPROTO
+		 * and only recovers after a multi-second retry loop and a
+		 * forced hub reset. Re-initialise the controller on resume
+		 * instead of restoring state, so the bus re-enumerates cleanly.
+		 */
+		xhci->quirks |= XHCI_RESET_ON_RESUME;
+	}
 
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL) {
 		xhci->quirks |= XHCI_LPM_SUPPORT;

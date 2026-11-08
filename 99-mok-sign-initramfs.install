@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# kernel-install plugin: sign the dracut-generated initramfs with the MOK.
+#
+# This fires whenever the initramfs is (re)built through kernel-install /
+# "make install" (which runs dracut), e.g. on kernel install or `dracut -f`
+# via kernel-install.  It appends the MOK signature so a kernel built with
+# CONFIG_INITRAMFS_SIG=y will accept the image.
+#
+# Install:
+#   sudo install -m 0755 mok-sign-initramfs.sh /usr/local/sbin/
+#   sudo install -m 0755 99-mok-sign-initramfs.install \
+#                        /etc/kernel/install.d/99-mok-sign-initramfs.install
+#
+# If you run dracut by hand instead of via kernel-install, just call:
+#   sudo mok-sign-initramfs.sh /boot/initramfs-<version>.img
+#
+set -euo pipefail
+
+COMMAND="${1:-}"
+KERNEL_VERSION="${2:-}"
+
+# Only sign on install; nothing to do on removal.
+[[ "$COMMAND" == "add" ]] || exit 0
+
+# Locate the signer.
+SIGN=""
+for c in \
+	/usr/local/sbin/mok-sign-initramfs.sh \
+	"$(dirname "$(readlink -f "$0")")/mok-sign-initramfs.sh" \
+	"$(command -v mok-sign-initramfs.sh 2>/dev/null || true)"; do
+	[[ -n "$c" && -x "$c" ]] && { SIGN="$c"; break; }
+done
+if [[ -z "$SIGN" ]]; then
+	echo "99-mok-sign-initramfs: mok-sign-initramfs.sh not found" >&2
+	exit 0   # don't fail the whole kernel install
+fi
+
+# Collect candidate initramfs images (classic /boot layout, the staging area
+# used by newer systemd, and any extra paths passed by kernel-install).
+candidates=()
+[[ -n "$KERNEL_VERSION" ]] && candidates+=("/boot/initramfs-${KERNEL_VERSION}.img")
+[[ -n "${KERNEL_INSTALL_STAGING_AREA:-}" ]] && candidates+=("${KERNEL_INSTALL_STAGING_AREA}/initrd")
+# Remaining args (kernel image + initrd paths, version dependent); sign the
+# ones that look like initrd/initramfs images.
+shift 2 2>/dev/null || true
+for a in "$@"; do
+	case "$a" in
+		*initrd*|*initramfs*) candidates+=("$a") ;;
+	esac
+done
+
+for img in "${candidates[@]}"; do
+	[[ -e "$img" ]] && "$SIGN" "$img" || true
+done
+exit 0

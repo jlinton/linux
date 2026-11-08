@@ -108,8 +108,18 @@ bool hibernation_in_progress(void)
 
 bool hibernation_available(void)
 {
-	return nohibernate == 0 &&
-		!security_locked_down(LOCKDOWN_HIBERNATION) &&
+	/*
+	 * The in-kernel hibernate/resume path may be permitted under lockdown
+	 * when CONFIG_HIBERNATION_UNDER_LOCKDOWN is set: the image is produced
+	 * and restored by the kernel itself, so userland cannot substitute it.
+	 * The userspace snapshot device (/dev/snapshot) is gated separately in
+	 * snapshot_open() and stays blocked under lockdown regardless, since it
+	 * would let a confined process load an arbitrary image into the kernel.
+	 */
+	bool lockdown_ok = IS_ENABLED(CONFIG_HIBERNATION_UNDER_LOCKDOWN) ||
+			   !security_locked_down(LOCKDOWN_HIBERNATION);
+
+	return nohibernate == 0 && lockdown_ok &&
 		!secretmem_active() && !cxl_mem_active();
 }
 

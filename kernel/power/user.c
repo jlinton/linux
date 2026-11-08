@@ -21,6 +21,7 @@
 #include <linux/console.h>
 #include <linux/cpu.h>
 #include <linux/freezer.h>
+#include <linux/security.h>
 
 #include <linux/uaccess.h>
 
@@ -51,6 +52,15 @@ static int snapshot_open(struct inode *inode, struct file *filp)
 	int error;
 
 	if (!hibernation_available())
+		return -EPERM;
+
+	/*
+	 * The in-kernel hibernate/resume path may be permitted under lockdown
+	 * (see hibernation_available()), but the userspace snapshot device must
+	 * not be: writing an image through it lets a lockdown-confined process
+	 * load arbitrary code into the kernel.
+	 */
+	if (security_locked_down(LOCKDOWN_HIBERNATION))
 		return -EPERM;
 
 	sleep_flags = lock_system_sleep();

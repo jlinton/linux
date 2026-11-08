@@ -35,6 +35,20 @@ static int lock_kernel_down(const char *where, enum lockdown_reason level)
 	return 0;
 }
 
+/**
+ * security_lock_kernel_down - request that the kernel be locked down
+ * @where: a human-readable string describing what triggered the request
+ * @level: the lockdown level (LOCKDOWN_INTEGRITY_MAX or _CONFIDENTIALITY_MAX)
+ *
+ * Allows in-kernel callers (e.g. the EFI Secure Boot detection path) to raise
+ * the kernel lockdown level.  Locking down is a one-way ratchet; a request for
+ * a level at or below the current one returns -EPERM.
+ */
+int security_lock_kernel_down(const char *where, enum lockdown_reason level)
+{
+	return lock_kernel_down(where, level);
+}
+
 static int __init lockdown_param(char *level)
 {
 	if (!level)

@@ -157,6 +157,16 @@ enum lockdown_reason {
 	LOCKDOWN_CONFIDENTIALITY_MAX,
 };
 
+#ifdef CONFIG_SECURITY_LOCKDOWN_LSM
+int security_lock_kernel_down(const char *where, enum lockdown_reason level);
+#else
+static inline int security_lock_kernel_down(const char *where,
+					    enum lockdown_reason level)
+{
+	return 0;
+}
+#endif
+
 /*
  * Data exported by the security modules
  */

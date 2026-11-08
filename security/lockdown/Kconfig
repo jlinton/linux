@@ -45,3 +45,22 @@ config LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY
 	 disabled.
 
 endchoice
+
+config LOCK_DOWN_IN_EFI_SECURE_BOOT
+	bool "Lock down the kernel in EFI Secure Boot mode"
+	default n
+	depends on SECURITY_LOCKDOWN_LSM
+	depends on EFI
+	help
+	  UEFI Secure Boot provides a mechanism for ensuring that the firmware
+	  will only load signed bootloaders and kernels.  Secure boot is not an
+	  end in itself: it is a means to establish a trusted boot chain whose
+	  integrity depends on the kernel not being modifiable from userland.
+
+	  Enabling this option results in the kernel raising the lockdown level
+	  to integrity mode automatically when booted in EFI Secure Boot mode,
+	  disabling the userland interfaces that could be used to modify the
+	  running kernel (including hibernation, whose resume image is not
+	  cryptographically verified).
+
+	  If you are unsure how to answer this question, answer N.

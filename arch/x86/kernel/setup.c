@@ -11,6 +11,7 @@
 #include <linux/crash_dump.h>
 #include <linux/dma-map-ops.h>
 #include <linux/efi.h>
+#include <linux/security.h>
 #include <linux/hugetlb.h>
 #include <linux/ima.h>
 #include <linux/init_ohci1394_dma.h>
@@ -1167,6 +1168,10 @@ void __init setup_arch(char **cmdline_p)
 			break;
 		case efi_secureboot_mode_enabled:
 			pr_info("Secure boot enabled\n");
+#ifdef CONFIG_LOCK_DOWN_IN_EFI_SECURE_BOOT
+			security_lock_kernel_down("EFI Secure Boot mode",
+						  LOCKDOWN_INTEGRITY_MAX);
+#endif
 			break;
 		default:
 			pr_info("Secure boot could not be determined\n");

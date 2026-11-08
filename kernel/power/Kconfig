@@ -92,6 +92,30 @@ config HIBERNATION_SNAPSHOT_DEV
 
 	  If in doubt, say Y.
 
+config HIBERNATION_UNDER_LOCKDOWN
+	bool "Allow hibernation while the kernel is locked down"
+	depends on HIBERNATION && SECURITY_LOCKDOWN_LSM
+	default n
+	help
+	  Kernel lockdown (e.g. under EFI Secure Boot) normally disables
+	  hibernation, because the resume image is not cryptographically
+	  authenticated and could be used to inject code into the running
+	  kernel.
+
+	  Enabling this option permits the in-kernel hibernate/resume path to
+	  run while the kernel is locked down.  The userspace snapshot device
+	  (/dev/snapshot) remains blocked under lockdown regardless, so a
+	  confined process still cannot load an arbitrary image through it.
+
+	  Only enable this if the hibernation image is otherwise protected
+	  from tampering (e.g. encrypted swap on a self-encrypting drive with
+	  a verified resume path).  It weakens lockdown's guarantee against an
+	  already-privileged process persisting code across a reboot via a
+	  forged on-disk image; that residual is only fully closed by in-kernel
+	  image authentication.
+
+	  If you are unsure, answer N.
+
 choice
 	prompt "Default compressor"
 	default HIBERNATION_COMP_LZO

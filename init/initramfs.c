@@ -600,7 +600,7 @@ static int __init initramfs_async_setup(char *str)
 }
 __setup("initramfs_async=", initramfs_async_setup);
 
-static bool  __initdata enforce_initrd_sig = IS_ENABLED(CONFIG_INITRAMFS_SIG);
+static bool __initdata enforce_initrd_sig = IS_ENABLED(CONFIG_INITRAMFS_SIG);
 #ifdef CONFIG_INITRAMFS_SIG
 static int __init initrd_sig_setup(char *str)
 {
@@ -613,10 +613,8 @@ static int __init initrd_sig_setup(char *str)
 __setup("initrdsig=", initrd_sig_setup);
 #endif
 
-
 extern char __initramfs_start[];
 extern unsigned long __initramfs_size;
-#include <linux/initrd.h>
 #include <linux/kexec.h>
 
 static BIN_ATTR(initrd, 0440, sysfs_bin_attr_simple_read, NULL, 0);
@@ -740,11 +738,10 @@ static int __init initrd_signature_check(size_t *initrd_len)
 
 	*initrd_len = (initrd_end - initrd_start);
 
-	if ( *initrd_len < (m_len + sizeof(*ms)) ) {
+	if (*initrd_len < m_len + sizeof(*ms))
 		goto fail;
-	}
 
-	if (memcmp((char*)(initrd_end - m_len), INITRD_SIG_STRING, m_len) ) {
+	if (memcmp((char *)(initrd_end - m_len), INITRD_SIG_STRING, m_len)) {
 		pr_info("unsigned initramfs\n");
 		goto fail;
 	}
@@ -755,36 +752,35 @@ static int __init initrd_signature_check(size_t *initrd_len)
 	ms = (struct module_signature *)(initrd_end - sizeof(*ms) - m_len);
 
 	ret = mod_check_sig(ms, *initrd_len, "initramfs");
-	if (ret) {
+	if (ret)
 		goto fail;
-	}
 
 	sig_len = be32_to_cpu(ms->sig_len);
 	*initrd_len -= sizeof(*ms) + sig_len;
 
 #ifdef CONFIG_INITRAMFS_SIG
-	ret = verify_pkcs7_signature((char*)initrd_start, *initrd_len,
-				     (char*)(initrd_start + *initrd_len),
+	ret = verify_pkcs7_signature((char *)initrd_start, *initrd_len,
+				     (char *)(initrd_start + *initrd_len),
 				     sig_len,
 				     VERIFY_USE_SECONDARY_KEYRING,
 				     VERIFYING_UNSPECIFIED_SIGNATURE,
 				     NULL, NULL);
 
 	switch (ret) {
-		case 0:
-			pr_info("initramfs: valid signature\n");
-			break;
-		case -ENODATA:
-			pr_err("initramfs: invalid signature\n");
-			break;
-		case -ENOPKG:
-			pr_err("initramfs: unsupported crypto\n");
-			break;
-		case -ENOKEY:
-			pr_err("initramfs: unknown key\n");
-			break;
-		default:
-			pr_err("initramfs: unknown error %d\n", ret);
+	case 0:
+		pr_info("initramfs: valid signature\n");
+		break;
+	case -ENODATA:
+		pr_err("initramfs: invalid signature\n");
+		break;
+	case -ENOPKG:
+		pr_err("initramfs: unsupported crypto\n");
+		break;
+	case -ENOKEY:
+		pr_err("initramfs: unknown key\n");
+		break;
+	default:
+		pr_err("initramfs: unknown error %d\n", ret);
 	}
 #endif
 

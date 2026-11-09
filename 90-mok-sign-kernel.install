@@ -1,0 +1,42 @@
+#!/bin/bash
+#
+# kernel-install plugin: sign the installed kernel image with the MOK (sbsign)
+# so shim will load it under Secure Boot.  Signs in place, same filename.
+#
+# Install:
+#   sudo install -m 0755 mok-sign-kernel.sh /usr/local/sbin/
+#   sudo install -m 0755 90-mok-sign-kernel.install \
+#                        /etc/kernel/install.d/90-mok-sign-kernel.install
+#
+# If you build/install by hand, just call:
+#   sudo mok-sign-kernel.sh /boot/vmlinuz-<version>
+#
+set -euo pipefail
+
+COMMAND="${1:-}"
+KERNEL_VERSION="${2:-}"
+
+[[ "$COMMAND" == "add" ]] || exit 0
+
+SIGN=""
+for c in \
+	/usr/local/sbin/mok-sign-kernel.sh \
+	"$(dirname "$(readlink -f "$0")")/mok-sign-kernel.sh" \
+	"$(command -v mok-sign-kernel.sh 2>/dev/null || true)"; do
+	[[ -n "$c" && -x "$c" ]] && { SIGN="$c"; break; }
+done
+if [[ -z "$SIGN" ]]; then
+	echo "90-mok-sign-kernel: mok-sign-kernel.sh not found" >&2
+	exit 0   # don't fail the whole kernel install
+fi
+
+# Sign the installed image (classic /boot layout) and the staging copy if the
+# installer uses one.  Idempotent, so signing both is harmless.
+candidates=()
+[[ -n "$KERNEL_VERSION" ]] && candidates+=("/boot/vmlinuz-${KERNEL_VERSION}")
+[[ -n "${KERNEL_INSTALL_STAGING_AREA:-}" ]] && candidates+=("${KERNEL_INSTALL_STAGING_AREA}/linux")
+
+for img in "${candidates[@]}"; do
+	[[ -e "$img" ]] && "$SIGN" "$img" || true
+done
+exit 0

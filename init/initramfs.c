@@ -735,21 +735,33 @@ static int __init initrd_signature_check(size_t *initrd_len)
 	size_t sig_len;
 	int ret = -ENODATA;
 	const size_t m_len = sizeof(INITRD_SIG_STRING) - 1;
+	unsigned long end = initrd_end;
+	unsigned int pad;
+	bool found = false;
 
-	*initrd_len = (initrd_end - initrd_start);
-
-	if (*initrd_len < m_len + sizeof(*ms))
-		goto fail;
-
-	if (memcmp((char *)(initrd_end - m_len), INITRD_SIG_STRING, m_len)) {
+	/*
+	 * Bootloaders align the initrd they hand the kernel and append a few
+	 * bytes of padding after our trailing marker - GRUB rounds up to 4
+	 * bytes, and the padding is not necessarily zero.  Step the marker
+	 * match back a byte at a time, up to a page, to find the real end of
+	 * the image rather than assuming the marker is the very last byte.
+	 */
+	for (pad = 0; pad < PAGE_SIZE &&
+		      end >= initrd_start + m_len + sizeof(*ms); pad++, end--) {
+		if (!memcmp((char *)(end - m_len), INITRD_SIG_STRING, m_len)) {
+			found = true;
+			break;
+		}
+	}
+	if (!found) {
 		pr_info("unsigned initramfs\n");
 		goto fail;
 	}
 
-	/* remove module sig string from len computations going forward */
-	*initrd_len -= m_len;
+	/* image is everything up to the marker (end points just past it) */
+	*initrd_len = (end - initrd_start) - m_len;
 
-	ms = (struct module_signature *)(initrd_end - sizeof(*ms) - m_len);
+	ms = (struct module_signature *)(end - sizeof(*ms) - m_len);
 
 	ret = mod_check_sig(ms, *initrd_len, "initramfs");
 	if (ret)
@@ -783,8 +795,10 @@ static int __init initrd_signature_check(size_t *initrd_len)
 		pr_err("initramfs: unknown error %d\n", ret);
 	}
 #endif
+	return ret;
 
 fail:
+	*initrd_len = initrd_end - initrd_start;
 	return ret;
 }
 

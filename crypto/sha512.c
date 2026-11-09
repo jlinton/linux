@@ -404,7 +404,12 @@ static int __init crypto_sha512_mod_init(void)
 {
 	return crypto_register_shashes(algs, ARRAY_SIZE(algs));
 }
+/* The signed initramfs may need SHA-512 before device initcalls. */
+#ifdef CONFIG_INITRAMFS_SIG
+subsys_initcall(crypto_sha512_mod_init);
+#else
 module_init(crypto_sha512_mod_init);
+#endif
 
 static void __exit crypto_sha512_mod_exit(void)
 {

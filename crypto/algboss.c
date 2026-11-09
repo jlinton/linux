@@ -247,7 +247,12 @@ static void __exit cryptomgr_exit(void)
 	BUG_ON(err);
 }
 
+/* Initramfs verification may need crypto templates before rootfs_initcall. */
+#ifdef CONFIG_INITRAMFS_SIG
+core_initcall(cryptomgr_init);
+#else
 module_init(cryptomgr_init);
+#endif
 module_exit(cryptomgr_exit);
 
 MODULE_LICENSE("GPL");

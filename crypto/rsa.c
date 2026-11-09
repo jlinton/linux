@@ -430,7 +430,12 @@ static void __exit rsa_exit(void)
 	crypto_unregister_akcipher(&rsa);
 }
 
+/* Register RSA and its signature templates before initramfs verification. */
+#ifdef CONFIG_INITRAMFS_SIG
+subsys_initcall(rsa_init);
+#else
 module_init(rsa_init);
+#endif
 module_exit(rsa_exit);
 MODULE_ALIAS_CRYPTO("rsa");
 MODULE_LICENSE("GPL");
